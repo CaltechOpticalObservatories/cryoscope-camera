@@ -43,6 +43,7 @@ namespace Archon {
     this->is_window = false;
     this->is_autofetch = false;
     this->is_unp = true;  // always write unp images for now but add control
+    this->is_bidirectional = false; // overridden by BIDIRECTIONAL_READOUT in the config file
     this->mode_actions["init_rxrvideo"]   = [this](const std::string &m){ return this->mode_init_rxrvideo(m);   };
     this->mode_actions["init_enhancedrx"] = [this](const std::string &m){ return this->mode_init_enhancedrx(m); };
     this->win_hstart = 0;
@@ -155,6 +156,55 @@ namespace Archon {
     return NO_ERROR;
   }
   /***** Archon::Interface::save_unp ******************************************/
+
+
+  /***** Archon::Interface::bidirection ***************************************/
+  /**
+   * @brief      set/get whether alternating channels read out in alternating directions
+   * @param[in]  args       input string contains requested state
+   * @param[out] retstring  return string contains the current state
+   * @return     ERROR | NO_ERROR | HELP
+   *
+   * When bidirectional, odd-number channels read out in the direction opposite
+   * their even-number neighbors and must be reversed when de-interlacing.
+   *
+   */
+  long Interface::bidirection( std::string args, std::string &retstring ) {
+    std::string function = "Archon::Interface::bidirection";
+    std::stringstream message;
+
+    // Help
+    //
+    if ( args == "?" || args == "help" ) {
+      retstring = CAMERAD_BIDIRECTION;
+      retstring.append( " [ yes | no ]\n" );
+      retstring.append( "   Set state of bidirectional readout, where alternating channels read\n" );
+      retstring.append( "   out in alternating directions. If no argument provided then the\n" );
+      retstring.append( "   current state is returned.\n" );
+      return HELP;
+    }
+
+    if ( caseCompareString( args, "yes" ) || caseCompareString( args, "true" ) ) {
+      this->is_bidirectional = true;
+    }
+    else if ( caseCompareString( args, "no" ) || caseCompareString( args, "false" ) ) {
+      this->is_bidirectional = false;
+    }
+    else if ( !args.empty() ) {
+      message.str( "" );
+      logwrite( function, "ERROR invalid argument '" + args + "': expected { yes no }");
+      retstring = "invalid_argument";
+      return ERROR;
+    }
+
+    retstring = ( this->is_bidirectional ? "yes" : "no" );
+
+    message << "h2rg bidirectional readout " << (this->is_bidirectional ? "enabled" : "disabled");
+    logwrite( function, message.str() );
+
+    return NO_ERROR;
+  }
+  /***** Archon::Interface::bidirection ***************************************/
 
 
   /***** Archon::Interface::fits_compression **********************************/
@@ -511,6 +561,19 @@ namespace Archon {
           this->camera.log_error( function, "setting cubeamps" );
           return ERROR;
         }
+      }
+
+      if ( config.param[entry] == "BIDIRECTIONAL_READOUT" ) { // BIDIRECTIONAL_READOUT
+        std::string dontcare;
+        if ( this->bidirection( config.arg[entry], dontcare ) == ERROR ) {
+          this->camera.log_error( function, "setting bidirectional readout" );
+          return ERROR;
+        }
+        message.str( "" );
+        message << "CONFIG:" << config.param[entry] << "=" << config.arg[entry];
+        logwrite( function, message.str() );
+        this->camera.async.enqueue( message.str() );
+        applied++;
       }
 
       if (config.param[entry].compare(0, 12, "EXPOSE_PARAM")==0) {             // EXPOSE_PARAM
@@ -4138,15 +4201,15 @@ namespace Archon {
     std::unique_ptr<PostProcess<uint16_t>> postproc_ushort;
 
     switch ( this->camera_info.bitpix ) {
-      case FLOAT_IMG:  postproc_float  = std::make_unique<PostProcess<float>>(frames, this->camera_info.naxes );
+      case FLOAT_IMG:  postproc_float  = std::make_unique<PostProcess<float>>(frames, this->camera_info.naxes, this->is_bidirectional );
                        break;
-      case LONG_IMG:   postproc_long   = std::make_unique<PostProcess<int32_t>>(frames, this->camera_info.naxes );
+      case LONG_IMG:   postproc_long   = std::make_unique<PostProcess<int32_t>>(frames, this->camera_info.naxes, this->is_bidirectional );
                        break;
-      case SHORT_IMG:  postproc_short  = std::make_unique<PostProcess<int16_t>>(frames, this->camera_info.naxes );
+      case SHORT_IMG:  postproc_short  = std::make_unique<PostProcess<int16_t>>(frames, this->camera_info.naxes, this->is_bidirectional );
                        break;
-      case ULONG_IMG:  postproc_ulong  = std::make_unique<PostProcess<uint32_t>>(frames, this->camera_info.naxes );
+      case ULONG_IMG:  postproc_ulong  = std::make_unique<PostProcess<uint32_t>>(frames, this->camera_info.naxes, this->is_bidirectional );
                        break;
-      case USHORT_IMG: postproc_ushort = std::make_unique<PostProcess<uint16_t>>(frames, this->camera_info.naxes );
+      case USHORT_IMG: postproc_ushort = std::make_unique<PostProcess<uint16_t>>(frames, this->camera_info.naxes, this->is_bidirectional );
                        break;
       default:         message.str(""); message << "unknown datatype " << this->camera_info.bitpix;
                        this->camera.log_error( function, message.str() );
@@ -4689,6 +4752,7 @@ if ( this->modemap[mode].subtract_reset ) {
         return (error);
     }
     /**************** Archon::Interface::hsetup *******************************/
+
 
     /**************** Archon::Interface::hroi ******************************/
     /**

@@ -92,6 +92,7 @@ namespace Archon {
     class PostProcess {
       protected:
         int _frames;   //!< frames per buffer (1 = signal only; 2 = signal+reset)
+        bool _bidirectional; //!< true if alternating channels read out in alternating directions
         std::vector<std::vector<T>> _sigbuf;
         std::vector<std::vector<T>> _resbuf;
         std::vector<int32_t> _cdsbuf;
@@ -107,7 +108,8 @@ namespace Archon {
 
       public:
 
-        PostProcess( int frames, std::vector<long> naxes ) : _frames(frames), _naxes(naxes) {
+        PostProcess( int frames, std::vector<long> naxes, bool bidirectional )
+          : _frames(frames), _bidirectional(bidirectional), _naxes(naxes) {
           const std::string function="Archon::PostProcess::PostProcess";
           std::stringstream message;
 
@@ -132,11 +134,19 @@ namespace Archon {
           logwrite( "PostProcess::deinterlace", message.str() );
 
           // Single-frame buffer (no reset).
-          // Buffer row stride is _cols; copy each 64-pixel channel straight for
-          // even channels and reversed for odd channels (opposite readout dir).
+          // Buffer row stride is _cols. When the readout is bidirectional,
+          // copy each 64-pixel channel straight for even channels and reversed
+          // for odd channels (opposite readout dir); otherwise every channel
+          // reads out the same way, so each row is one straight copy.
           //
           if ( _frames == 1 ) {
             T* psignal = _sigbuf[idx].data();
+            if ( !_bidirectional ) {
+              for ( long row=0; row < _rows; ++row ) {
+                std::memcpy( &psignal[row*_cols], &typed_image[row*_cols], _cols*sizeof(T) );
+              }
+              return;
+            }
             for ( long row=0; row < _rows; ++row ) {
               for ( long col=0; col < _cols; col+=64 ) {
                 long chan = col / 64;
@@ -155,6 +165,29 @@ namespace Archon {
 
           T* psignal = _sigbuf[idx].data();
           T* preset  = _resbuf[idx].data();
+
+          // All channels read out in the same direction, so every block is copied
+          // straight, but the signal/reset block order still alternates: even
+          // channels are S,R and odd channels are R,S.
+          //
+          if ( !_bidirectional ) {
+            for ( long row=0; row < _rows; ++row ) {
+              for ( long col=0; col < _cols; col+=64 ) {
+                long chan = col / 64;
+                // even-number channels have signal in the 1st block
+                if (chan % 2 == 0) {
+                  std::memcpy( &psignal[row*_cols + col], &typed_image[row*_cols*2 + col*2],      64*sizeof(T) );
+                  std::memcpy(  &preset[row*_cols + col], &typed_image[row*_cols*2 + col*2 + 64], 64*sizeof(T) );
+                }
+                else {
+                // odd-number channels have signal in the 2nd block, reset in the 1st
+                  std::memcpy( &psignal[row*_cols + col], &typed_image[row*_cols*2 + col*2 + 64], 64*sizeof(T) );
+                  std::memcpy(  &preset[row*_cols + col], &typed_image[row*_cols*2 + col*2],      64*sizeof(T) );
+                }
+              }
+            }
+            return;
+          }
 
           for ( long row=0; row < _rows; ++row ) {
             for ( long col=0; col < _cols; col+=64 ) {
@@ -408,6 +441,7 @@ for (int i=0; i<5; i++) {
         bool is_window; //!< true if in window mode for h2rg, false if not
         bool is_autofetch;
         bool is_unp;               //!< should I write unp images?
+        bool is_bidirectional;     //!< do alternating channels read out in alternating directions?
         int win_hstart;
         int win_hstop;
         int win_vstart;
@@ -461,6 +495,7 @@ for (int i=0; i<5; i++) {
         void ring_index_inc() { if (++this->ring_index==2) this->ring_index=0; }
         int  prev_ring_index() { int i=this->ring_index-1; return( i<0 ? 1 : i ); }
         long save_unp(std::string args, std::string &retstring);
+        long bidirection( std::string args, std::string &retstring );
         long fits_compression(std::string args, std::string &retstring);
         static long interface(std::string &iface); //!< get interface type
         long configure_controller(); //!< get configuration parameters
