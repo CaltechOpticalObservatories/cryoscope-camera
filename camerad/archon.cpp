@@ -383,13 +383,24 @@ namespace Archon {
    * @brief      set/get the power state
    * @param[in]  state_in    input string contains requested power state
    * @param[out] retstring   return string contains the current power state
-   * @return     ERROR or NO_ERROR
+   * @return     ERROR | NO_ERROR | HELP
    *
    */
   long Interface::do_power(std::string state_in, std::string &retstring) {
     std::string function = "Archon::Interface::do_power";
     std::stringstream message;
     long error = ERROR;
+
+    // Help
+    //
+    if ( args == "?" || args == "help" ) {
+      retstring=CAMERAD_POWER;
+      retstring.append( " [ on | off ]\n" );
+      retstring.append( "   Controls power to biases supplied by Archon controller.\n" );
+      retstring.append( "   When powering on, the detector is configured and made ready to expose.\n" );
+      retstring.append( "   No argument returns the current state.\n" );
+      return HELP;
+    }
 
     if ( !this->archon.isconnected() ) {                        // nothing to do if no connection open to controller
       this->camera.log_error( function, "connection not open to controller" );
@@ -402,7 +413,11 @@ namespace Archon {
       std::transform( state_in.begin(), state_in.end(), state_in.begin(), ::toupper );  // make uppercase
       if ( state_in == "ON" ) {
         error = this->archon_cmd( POWERON );                    // send POWERON command to Archon
-        if ( error == NO_ERROR ) std::this_thread::sleep_for( std::chrono::seconds(2) );         // wait 2s to ensure power is stable
+        if ( error == NO_ERROR ) {
+          std::this_thread::sleep_for(std::chrono::seconds(2)); // ensure power is stable
+          error = this->set_parameter("Start", 1);              // required for cryoscope ACF
+          if (error==NO_ERROR) error = this->hsetup();          // setup h2rg
+        }
       }
       else
       if ( state_in == "OFF" ) {
@@ -421,18 +436,43 @@ namespace Archon {
       }
     }
 
+
+    retstring = this->camera.power_status;
+
+    return(NO_ERROR);
+  }
+  /***** Archon::Interface::do_power ******************************************/
+
+
+  long Interface::power_on_sequence() {
+    long error = this->archon_cmd( POWERON );              // send POWERON command to Archon
+    if ( error != NO_ERROR ) return error;
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));  // ensure power is stable
+
+    error = this->set_parameter( "Start", 1);              // required for cryoscope acf
+    if ( error != NO_ERROR ) return error;
+
+    return this->hsetup();                                 // setup h2rg
+  }
+
+
+  int Interface::get_power_status() {
+    std::string function = "Archon::Interface::get_power_status";
+    std::ostringstream message;
+
     // Read the Archon power state directly from Archon
     //
     std::string power;
-    error = get_status_key( "POWER", power );
+    long error = get_status_key( "POWER", power );
 
-    if ( error != NO_ERROR ) return( ERROR );
+    if ( error != NO_ERROR ) return( POWER_STATUS_MISSING );
 
     int status=-1;
 
     try { status = std::stoi( power ); }
-    catch (std::invalid_argument &) {
-      this->camera.log_error( function, "unable to convert power status message to integer" );
+    catch ( const std::exception &e ) {
+      this->camera.log_error( function, "reading power status message: "+std::string(e.what()) );
       return(ERROR);
     }
     catch (std::out_of_range &) {
@@ -472,13 +512,6 @@ namespace Archon {
 
     message.str(""); message << "POWER:" << this->camera.power_status;
     this->camera.async.enqueue( message.str() );
-
-    retstring = this->camera.power_status;
-
-    return(NO_ERROR);
-  }
-  /***** Archon::Interface::do_power ******************************************/
-
 
 
   /***** Archon::Interface::configure_controller ******************************/

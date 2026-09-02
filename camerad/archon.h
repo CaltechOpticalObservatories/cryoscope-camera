@@ -87,6 +87,17 @@ namespace Archon {
     const int DEF_SHUTENABLE_ENABLE = 1;
     const int DEF_SHUTENABLE_DISABLE = 0;
 
+    // Archon Power Status values
+    //
+    const int POWER_STATUS_MISSING      = -1;
+    const int POWER_STATUS_UNKNOWN      =  0;
+    const int POWER_STATUS_NOCONFIG     =  1;
+    const int POWER_STATUS_OFF          =  2;
+    const int POWER_STATUS_INTERMEDIATE =  3;
+    const int POWER_STATUS_ON           =  4;
+    const int POWER_STANDBY             =  5;
+
+
     /***** Archon::PostProcess ***********************************************/
     template <typename T>
     class PostProcess {
