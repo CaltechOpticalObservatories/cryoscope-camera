@@ -1,3 +1,6 @@
+Split from CaltechOpticalObservatories/camera-interface-v1, branch cryoscope, at commit 2257f06c7effa8dc895db17825ea595b852f439c.
+Permanently diverged; nothing is merged in either direction.
+
 # Camera Interface
 
 Camera Detector Controller Interface Software
