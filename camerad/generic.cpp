@@ -68,9 +68,6 @@ namespace Archon {
      *
      */
     long Interface::power( std::string state_in, std::string &retstring ) {
-        std::string function = "Archon::Instrument::power";
-        std::stringstream message;
-
         // use Archon::Interface::do_power() to set/get the power
         //
         return( this->do_power( state_in, retstring ) );

@@ -54,7 +54,8 @@ namespace Camera {
         Camera() : image_dir("/images"), base_name("image"), fits_naming("time"),
                    dirmode(0), image_num(0), is_datacube(true), is_longerror(false), is_cubeamps(false),
                    _abortstate(false),
-                   autodir_state(true), abortstate(false), writekeys_when("before") {
+                   autodir_state(true), abortstate(false), writekeys_when("before"),
+                   power_status(0) {                        // 0 = Archon::POWER_STATUS_UNKNOWN
         }
 
 

@@ -408,7 +408,8 @@ namespace Archon {
       retstring=CAMERAD_POWER;
       retstring.append( " [ on | off ]\n" );
       retstring.append( "   Controls power to biases supplied by Archon controller.\n" );
-      retstring.append( "   When powering on, the detector is configured and made ready to expose.\n" );
+      retstring.append( "   When powering on, the detector is configured and made ready to expose,\n" );
+      retstring.append( "   which requires that the firmware has already been loaded.\n" );
       retstring.append( "   No argument returns the current state.\n" );
       return HELP;
     }
@@ -441,6 +442,8 @@ namespace Archon {
       }
     }
 
+    this->get_power_status();                                   // read the state back from the Archon
+
     retstring = this->camera.power_status_name();
 
     return(NO_ERROR);
@@ -456,6 +459,16 @@ namespace Archon {
    *
    */
   long Interface::power_on_sequence() {
+    std::string function = "Archon::Interface::power_on_sequence";
+
+    // hsetup() below needs the firmware loaded, so check that here, before
+    // the Archon has been powered on and Start applied
+    //
+    if ( ! this->firmwareloaded ) {
+      this->camera.log_error( function, "firmware not loaded: load firmware before powering on" );
+      return ERROR;
+    }
+
     long error = this->archon_cmd( POWERON );              // send POWERON command to Archon
     if ( error != NO_ERROR ) return error;
 
@@ -485,16 +498,16 @@ namespace Archon {
     long error = get_status_key( "POWER", power );
 
     try {
-      this->camera.power_status = (error==NO_ERROR ? std::stoi( power ) : POWER_STATUS_ERROR );
+      this->camera.power_status = (error==NO_ERROR ? std::stoi( power ) : POWER_STATUS_MISSING );
     }
     catch ( const std::exception &e ) {
       this->camera.log_error( function, "reading power status message: "+std::string(e.what()) );
-      return POWER_STATUS_ERROR;
+      this->camera.power_status = POWER_STATUS_ERROR;
     }
 
-    return this->camera.power_status;
-
     this->camera.async.enqueue( "POWER:"+this->camera.power_status_name() );
+
+    return this->camera.power_status;
   }
   /***** Archon::Interface::get_power_status **********************************/
 
@@ -1222,6 +1235,7 @@ namespace Archon {
     } catch (...) {
       message.str(""); message << "converting Archon command: " << prefix << " to uppercase";
       this->camera.log_error( function, message.str() );
+      this->archon_busy = false;
       return ERROR;
     }
 
@@ -1458,9 +1472,9 @@ namespace Archon {
 
     if (error != NO_ERROR) {
       message << "ERROR: prepping parameter \"" << paramname << "=" << value;
+      logwrite( function, message.str() );
     }
 
-    logwrite( function, message.str() );
     return error;
   }
   /**************** Archon::Interface::prep_parameter *************************/
@@ -4059,7 +4073,7 @@ namespace Archon {
           try {
               if ( tokens.at(0) == key ) {                 // looking for the KEY
                   value = tokens.at(1);                      // found the KEY= status here
-                  break;                                     // done looking
+                  return( NO_ERROR );                        // done looking
               } else continue;
           }
           catch (std::out_of_range &) {                  // should be impossible
@@ -4068,7 +4082,10 @@ namespace Archon {
           }
       }
 
-      return( NO_ERROR );
+      message.str(""); message << "key " << key << " not found in Archon status message";
+      this->camera.log_error( function, message.str() );
+
+      return( ERROR );
   }
   /***** Archon::Interface::get_status_key ************************************/
 
