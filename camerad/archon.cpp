@@ -587,6 +587,67 @@ namespace Archon {
   /***** Archon::Interface::initialize ****************************************/
 
 
+  /***** Archon::Interface::shutdown ******************************************/
+  /**
+   * @brief      shut down the detector, powering off and closing the connection
+   * @details    performs power off, then close
+   * @param[in]  args        input string, accepts no argument other than help
+   * @param[out] retstring   return string contains the final power state
+   * @return     ERROR | NO_ERROR | HELP
+   *
+   */
+  long Interface::shutdown(std::string args, std::string &retstring) {
+    std::string function = "Archon::Interface::shutdown";
+    std::stringstream message;
+
+    // Help
+    //
+    if ( args == "?" || args == "help" ) {
+      retstring=CAMERAD_SHUTDOWN;
+      retstring.append( " [ ? ]\n" );
+      retstring.append( "   Shut down the detector, equivalent to power off followed by close.\n" );
+      retstring.append( "   Takes no argument.\n" );
+      return HELP;
+    }
+
+    if ( !args.empty() ) {
+      message.str(""); message << "ERROR invalid argument " << args << ": expected no argument";
+      logwrite( function, message.str() );
+      retstring="invalid_argument";
+      return ERROR;
+    }
+
+    // nothing to shut down if no connection open to controller
+    //
+    if ( !this->archon.isconnected() ) {
+      logwrite( function, "connection already closed" );
+      return NO_ERROR;
+    }
+
+    // power off the detector
+    //
+    logwrite( function, "powering off detector" );
+    if ( this->do_power( "off", retstring ) != NO_ERROR ) {
+      this->camera.log_error( function, "powering off detector" );
+      return ERROR;                                             // leave the connection open, to allow a retry
+    }
+
+    // close the connection to the controller
+    //
+    logwrite( function, "closing connection to controller" );
+    if ( this->disconnect_controller() != NO_ERROR ) {
+      this->camera.log_error( function, "closing connection to controller" );
+      return ERROR;
+    }
+
+    message.str(""); message << "detector shut down: power " << retstring;
+    logwrite( function, message.str() );
+
+    return NO_ERROR;
+  }
+  /***** Archon::Interface::shutdown ******************************************/
+
+
   /***** Archon::Interface::configure_controller ******************************/
   /**
    * @brief      parse controller-related keys from the configuration file

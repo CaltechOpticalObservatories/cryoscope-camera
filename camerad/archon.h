@@ -584,6 +584,7 @@ for (int i=0; i<5; i++) {
         long do_power( std::string state_in, std::string &retstring );  /// set/get Archon power state
 
         long initialize( std::string args, std::string &retstring );    /// open, load, power on, set mode
+        long shutdown( std::string args, std::string &retstring );      /// power off, close
 
         long expose(std::string nseq_in);
 
