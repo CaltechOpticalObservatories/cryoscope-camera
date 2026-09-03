@@ -95,6 +95,17 @@ namespace Archon {
     this->frame.buftimestamp.resize( Archon::nbufs );
     this->frame.bufretimestamp.resize( Archon::nbufs );
     this->frame.buffetimestamp.resize( Archon::nbufs );
+
+    this->camera.power_status_map = { {POWER_STATUS_ERROR,        "ERROR"},
+                                      {POWER_STATUS_MISSING,      "MISSING"},
+                                      {POWER_STATUS_UNKNOWN,      "UNKNOWN"},
+                                      {POWER_STATUS_NOCONFIG,     "NOCONFIG"},
+                                      {POWER_STATUS_OFF,          "OFF"},
+                                      {POWER_STATUS_INTERMEDIATE, "INTERMEDIATE"},
+                                      {POWER_STATUS_ON,           "ON"},
+                                      {POWER_STATUS_STANDBY,      "STANDBY"}
+                                    };
+
   }
 
   // Archon::Interface deconstructor
