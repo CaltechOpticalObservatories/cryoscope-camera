@@ -512,6 +512,81 @@ namespace Archon {
   /***** Archon::Interface::get_power_status **********************************/
 
 
+  /***** Archon::Interface::initialize ****************************************/
+  /**
+   * @brief      initialize the detector, ready to expose
+   * @details    performs open, load and power on, then selects the INIT_MODE mode
+   * @param[in]  args        input string, accepts no argument other than help
+   * @param[out] retstring   return string contains the selected mode
+   * @return     ERROR | NO_ERROR | HELP
+   *
+   */
+  long Interface::initialize(std::string args, std::string &retstring) {
+    std::string function = "Archon::Interface::initialize";
+    std::stringstream message;
+    std::string powerstate;
+
+    // Help
+    //
+    if ( args == "?" || args == "help" ) {
+      retstring=CAMERAD_INITIALIZE;
+      retstring.append( " [ ? ]\n" );
+      retstring.append( "   Initialize the detector, equivalent to open, load, power on and\n" );
+      retstring.append( "   selecting the " + INIT_MODE + " mode. Takes no argument.\n" );
+      return HELP;
+    }
+
+    if ( !args.empty() ) {
+      message.str(""); message << "ERROR invalid argument " << args << ": expected no argument";
+      logwrite( function, message.str() );
+      retstring="invalid_argument";
+      return ERROR;
+    }
+
+    // open a connection to the controller
+    //
+    logwrite( function, "opening connection to controller" );
+    if ( this->connect_controller( "" ) != NO_ERROR ) {
+      this->camera.log_error( function, "opening connection to controller" );
+      return ERROR;
+    }
+
+    // load the default firmware, which also selects the DEFAULT mode
+    //
+    logwrite( function, "loading firmware" );
+    if ( this->load_firmware( std::string("") ) != NO_ERROR ) {
+      this->camera.log_error( function, "loading firmware" );
+      return ERROR;
+    }
+
+    // power on, which also sets Start=1 and performs the h2rg setup
+    //
+    logwrite( function, "powering on detector" );
+    if ( this->do_power( "on", powerstate ) != NO_ERROR ) {
+      this->camera.log_error( function, "powering on detector" );
+      return ERROR;
+    }
+
+    // select the observing mode
+    //
+    message.str(""); message << "selecting mode " << INIT_MODE;
+    logwrite( function, message.str() );
+    if ( this->set_camera_mode( INIT_MODE ) != NO_ERROR ) {
+      message.str(""); message << "selecting mode " << INIT_MODE;
+      this->camera.log_error( function, message.str() );
+      return ERROR;
+    }
+
+    retstring = this->camera_info.current_observing_mode;
+
+    message.str(""); message << "detector initialized: power " << powerstate << " mode " << retstring;
+    logwrite( function, message.str() );
+
+    return NO_ERROR;
+  }
+  /***** Archon::Interface::initialize ****************************************/
+
+
   /***** Archon::Interface::configure_controller ******************************/
   /**
    * @brief      parse controller-related keys from the configuration file

@@ -98,6 +98,10 @@ namespace Archon {
     const int POWER_STATUS_ON           =  4;
     const int POWER_STATUS_STANDBY      =  5;
 
+    // Observing mode selected by the initialize command
+    //
+    const std::string INIT_MODE = "VIDEORXR";
+
 
     /***** Archon::PostProcess ***********************************************/
     template <typename T>
@@ -578,6 +582,8 @@ for (int i=0; i<5; i++) {
 
         long power( std::string state_in, std::string &retstring );     /// wrapper for do_power
         long do_power( std::string state_in, std::string &retstring );  /// set/get Archon power state
+
+        long initialize( std::string args, std::string &retstring );    /// open, load, power on, set mode
 
         long expose(std::string nseq_in);
 

@@ -799,6 +799,9 @@ void doit(Network::TcpSocket sock) {
         else if ( cmd == CAMERAD_BIDIRECTION ) {
           ret = server.bidirection(args, retstring);
         }
+        else if ( cmd == CAMERAD_INITIALIZE ) {
+          ret = server.initialize(args, retstring);
+        }
 #endif
         else if (cmd == "expose") {
             ret = server.expose(args);
