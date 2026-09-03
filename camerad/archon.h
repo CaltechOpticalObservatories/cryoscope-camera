@@ -89,13 +89,14 @@ namespace Archon {
 
     // Archon Power Status values
     //
-    const int POWER_STATUS_MISSING      = -1;
+    const int POWER_STATUS_ERROR        = -2;  // camerad internal value
+    const int POWER_STATUS_MISSING      = -1;  // the rest are Archon values
     const int POWER_STATUS_UNKNOWN      =  0;
     const int POWER_STATUS_NOCONFIG     =  1;
     const int POWER_STATUS_OFF          =  2;
     const int POWER_STATUS_INTERMEDIATE =  3;
     const int POWER_STATUS_ON           =  4;
-    const int POWER_STANDBY             =  5;
+    const int POWER_STATUS_STANDBY      =  5;
 
 
     /***** Archon::PostProcess ***********************************************/
@@ -336,6 +337,8 @@ for (int i=0; i<5; i++) {
       private:
         unsigned long int start_timer, finish_timer; //!< Archon internal timer, start and end of exposure
         int n_hdrshift; //!< number of right-shift bits for Archon buffer in HDR mode
+        long power_on_sequence();
+        int get_power_status();
 
       public:
         Interface();

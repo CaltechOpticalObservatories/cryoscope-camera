@@ -75,7 +75,13 @@ namespace Camera {
         std::map<int, int> readout_time;
         //!< readout time in msec for given controller device number, read from .cfg file
 
-        std::string power_status;              //!< archon power status
+        int power_status;                            //!< current archon power status ID
+        std::map<int,std::string> power_status_map;  //!< archon power status maps ID to string
+
+        std::string power_status_name() {            //!< return the current power status by name
+          if (power_status_map.find(power_status)==power_status_map.end()) return "ERROR";
+          return power_status_map[power_status];
+        }
 
         void log_error(std::string function, std::string message);
 
