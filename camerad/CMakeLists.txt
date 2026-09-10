@@ -17,7 +17,6 @@ link_directories(${PROJECT_BASE_DIR}/lib)
 #   INTERFACE_TARGET    name to use for the target interface
 #   INTERFACE_SOURCE    list of sources required for target interface
 #   INTERFACE_INCLUDES  list of include paths for target interface
-#   interface           target for interfacing to appropriate hardware
 # ----------------------------------------------------------------------------
 
 # ----------------------------------------------------------------------------
@@ -70,10 +69,6 @@ elseif (${INTERFACE_TYPE} STREQUAL "Archon")
     list(APPEND INTERFACE_SOURCE
             "${CAMERA_DIR}/archon.cpp"
     )
-    list(APPEND INTERFACE_INCLUDES
-            "${ARCHON_INCLUDE}"
-    )
-    add_library(interface STATIC "${INTERFACE_SOURCE}")
     if (${DETECTOR_TYPE} STREQUAL "Hxrg")
         message(STATUS "compiling for HXRG detector")
         add_definitions(-DDET_HXRG)
@@ -90,23 +85,20 @@ endif ()
 # Currently supported <instr> names are: nirc2 generic
 # ----------------------------------------------------------------------------
 
-if (NOT DEFINED INSTR)
-    set(INSTR "undefined")
+if (NOT DEFINED INSTR OR INSTR STREQUAL "")
+    message(STATUS "no INSTR defined: using generic")
+    set(INSTR "generic")
+endif ()
+
+if (INSTR STREQUAL "nirc2")
+    message(STATUS "building for nirc2 instrument")
+    list(APPEND INTERFACE_SOURCE "${CAMERA_DIR}/nirc2.cpp")
+elseif (INSTR STREQUAL "generic")
+    message(STATUS "building for generic instrument")
+    list(APPEND INTERFACE_SOURCE "${CAMERA_DIR}/generic.cpp")
 else ()
-    if (${INSTR} STREQUAL "nirc2")
-        message(STATUS "building for nirc2 instrument")
-        list(APPEND INTERFACE_SOURCE "${CAMERA_DIR}/nirc2.cpp")
-    elseif (${INSTR} STREQUAL "generic")
-        message(STATUS "building for generic instrument")
-        list(APPEND INTERFACE_SOURCE "${CAMERA_DIR}/generic.cpp")
-    elseif (${INSTR} STREQUAL "undefined")
-        message(STATUS "no INSTR defined. using generic but other options are:")
-        message(STATUS "cmake -DINSTR=nirc2,generic ..")
-        list(APPEND INTERFACE_SOURCE "${CAMERA_DIR}/generic.cpp")
-    else ()
-        message(STATUS "unknown instrument " ${INSTR} ": using generic")
-        list(APPEND INTERFACE_SOURCE "${CAMERA_DIR}/generic.cpp")
-    endif ()
+    message(STATUS "unknown instrument " ${INSTR} ": using generic")
+    list(APPEND INTERFACE_SOURCE "${CAMERA_DIR}/generic.cpp")
 endif ()
 
 # ----------------------------------------------------------------------------

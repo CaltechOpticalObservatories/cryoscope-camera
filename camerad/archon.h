@@ -16,6 +16,7 @@
 #include <variant>
 #include <memory>
 #include <functional>
+#include <mutex>
 
 #include "opencv2/opencv.hpp"
 #include "utilities.h"
@@ -501,6 +502,9 @@ for (int i=0; i<5; i++) {
         std::mutex archon_mutex;
         //!< protects Archon from being accessed by multiple threads,
                                                     //!< use in conjunction with archon_busy flag
+        std::recursive_mutex sequence_mutex;
+        //!< serializes the multi-step power sequences (do_power, initialize,
+                                                    //!< shutdown) so that no command can land between their steps
         std::string longexposeparam; //!< param name to control longexposure in ACF (empty=not supported)
         std::string exposeparam; //!< param name to trigger exposure when set =1
 

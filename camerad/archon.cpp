@@ -361,12 +361,12 @@ namespace Archon {
     //
     std::string dontcare;
     message.str(""); message << "LINECOUNT " << rows;
-    error |= this->cds( message.str(), dontcare );
+    if ( error == NO_ERROR ) error = this->cds( message.str(), dontcare );
 
     // update parameters
     //
-    error |= this->set_parameter( "H2RG_rows", rows );
-    error |= this->set_parameter( "H2RG_rows_skip", skip );
+    if ( error == NO_ERROR ) error = this->set_parameter( "H2RG_rows", rows );
+    if ( error == NO_ERROR ) error = this->set_parameter( "H2RG_rows_skip", skip );
 
     // allocate archon_buf in blocks because the controller outputs data in units of blocks
     //
@@ -384,7 +384,7 @@ namespace Archon {
     retstring = message.str();
     logwrite( function, retstring );
 
-    return NO_ERROR;
+    return error;
   }
   /***** Archon::Interface::do_boi ********************************************/
 
@@ -417,6 +417,17 @@ namespace Archon {
     if ( !this->archon.isconnected() ) {                        // nothing to do if no connection open to controller
       this->camera.log_error( function, "connection not open to controller" );
       return( ERROR );
+    }
+
+    // Hold the sequence lock so that setting the power and reading it back
+    // cannot be interleaved with another power sequence. Never wait on it --
+    // a blocked command occupies a server thread, which must not be starved
+    // from answering the watchdog's ping -- so return BUSY instead.
+    //
+    std::unique_lock<std::recursive_mutex> lock( this->sequence_mutex, std::try_to_lock );
+    if ( ! lock.owns_lock() ) {
+      this->camera.log_error( function, "another power sequence is in progress" );
+      return BUSY;
     }
 
     // set the Archon power state as requested
@@ -543,6 +554,17 @@ namespace Archon {
       return ERROR;
     }
 
+    // Hold the sequence lock for the duration, so that a concurrent power
+    // command cannot land between the steps below. Never wait on it --
+    // a blocked command occupies a server thread, which must not be starved
+    // from answering the watchdog's ping -- so return BUSY instead.
+    //
+    std::unique_lock<std::recursive_mutex> lock( this->sequence_mutex, std::try_to_lock );
+    if ( ! lock.owns_lock() ) {
+      this->camera.log_error( function, "another power sequence is in progress" );
+      return BUSY;
+    }
+
     // open a connection to the controller
     //
     logwrite( function, "opening connection to controller" );
@@ -573,6 +595,15 @@ namespace Archon {
     logwrite( function, message.str() );
     if ( this->set_camera_mode( INIT_MODE ) != NO_ERROR ) {
       message.str(""); message << "selecting mode " << INIT_MODE;
+      this->camera.log_error( function, message.str() );
+      return ERROR;
+    }
+
+    // confirm the detector really is powered on before reporting success
+    //
+    if ( this->get_power_status() != POWER_STATUS_ON ) {
+      message.str(""); message << "detector power is " << this->camera.power_status_name()
+                               << " after initializing: expected ON";
       this->camera.log_error( function, message.str() );
       return ERROR;
     }
@@ -615,6 +646,17 @@ namespace Archon {
       logwrite( function, message.str() );
       retstring="invalid_argument";
       return ERROR;
+    }
+
+    // Hold the sequence lock for the duration, so that a concurrent power
+    // command cannot land between the steps below. Never wait on it --
+    // a blocked command occupies a server thread, which must not be starved
+    // from answering the watchdog's ping -- so return BUSY instead.
+    //
+    std::unique_lock<std::recursive_mutex> lock( this->sequence_mutex, std::try_to_lock );
+    if ( ! lock.owns_lock() ) {
+      this->camera.log_error( function, "another power sequence is in progress" );
+      return BUSY;
     }
 
     // nothing to shut down if no connection open to controller

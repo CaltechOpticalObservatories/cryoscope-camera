@@ -67,30 +67,6 @@ namespace Archon {
 
       std::string active_mode;    //!< currently active mode detected from ACF parameters
 
-      struct image_t {
-        uint32_t framen;
-        int  activebufs;             //!< number of active frame buffers
-        int  taplines;               //!< from "TAPLINES=" in ACF file
-        int  linecount;              //!< from "LINECOUNT=" in ACF file
-        int  pixelcount;             //!< from "PIXELCOUNT=" in ACF file
-        int  readtime;               //!< from "READOUT_TIME=" in configuration file
-        double pixel_time;           //!< PIXEL_TIME
-        double pixel_skip_time;      //!< PIXEL_SKIP_TIME
-        double row_overhead_time;    //!< ROW_OVERHEAD_TIME
-        double row_skip_time;        //!< ROW_SKIP_TIME
-        double frame_start_time;     //!< FRAME_START_TIME
-        double fs_pulse_time;        //!< FS_PULSE_TIME
-        int  imwidth;                //!< 
-        int  imheight;               //!< 
-        int  readouttime;            //!< 
-        int  exptime;                //!< requested exposure time in msec from WCONFIG
-        int  exposure_factor;        //!< multiplier for exptime relative to 1 sec (=1 for sec, =1000 for msec, etc.)
-        bool iscds;                  //!< is this a CDS exposure? (NIRC2)
-        int utr_samples;             //!< number of UTR samples (NIRC2)
-        int mcds_samples;            //!< number of MCDS samples (NIRC2)
-        int numsamples;              //!< number of samples, larger of utr,mcds (NIRC2)
-      } fimage;
-
       /**
        * @var     struct frame_data_t frame
        * @details structure to contain Archon results from "FRAME" command
@@ -132,48 +108,6 @@ namespace Archon {
       long rconfig(std::string buf, std::string &retstring);         
       long write_parameter(std::string buf);
       static void dothread_expose( Archon::Interface &iface, int numexpose );
-
-// TODO ***** below here need to check what's needed **********************************************************
-
-      int  msgref;                           //!< Archon message reference identifier, matches reply to command
-      std::vector<int> gain;                 //!< digital CDS gain (from TAPLINE definition)
-      std::vector<int> offset;               //!< digital CDS offset (from TAPLINE definition)
-      bool modeselected;                     //!< true if a valid mode has been selected, false otherwise
-      bool firmwareloaded;                   //!< true if firmware is loaded, false otherwise
-
-      float heater_target_min;               //!< minimum heater target temperature
-      float heater_target_max;               //!< maximum heater target temperature
-
-      char *image_data;                      //!< image data buffer
-      uint32_t image_data_bytes;             //!< requested number of bytes allocated for image_data rounded up to block size
-      uint32_t image_data_allocated;         //!< allocated number of bytes for image_data
-
-      std::atomic<bool> archon_busy;         //!< indicates a thread is accessing Archon
-      std::mutex archon_mutex;               //!< protects Archon from being accessed by multiple threads,
-                                             //!< use in conjunction with archon_busy flag
-
-      /**
-       * @var     struct geometry_t geometry[]
-       * @details structure of geometry which is unique to each observing mode
-       */
-      struct geometry_t {
-        int  amps[2];              // number of amplifiers per detector for each axis, set in set_camera_mode
-        int  num_detect;           // number of detectors, set in set_camera_mode
-        int  linecount;            // number of lines per tap
-        int  pixelcount;           // number of pixels per tap
-      };
-
-      /**
-       * @var     struct tapinfo_t tapinfo[]
-       * @details structure of tapinfo which is unique to each observing mode
-       */
-      struct tapinfo_t {
-        int   num_taps;
-        int   tap[16];
-        float gain[16];
-        float offset[16];
-        std::string readoutdir[16];
-      };
 
       /** @var      vector modtype
        *  @details  stores the type of each module from the SYSTEM command
