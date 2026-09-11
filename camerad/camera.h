@@ -51,10 +51,11 @@ namespace Camera {
         std::stringstream lasterrorstring; //!< a place to preserve an error message
 
       public:
-        Camera() : image_dir("/tmp"), base_name("image"), fits_naming("time"),
-                   dirmode(0), image_num(0), is_datacube(false), is_longerror(false), is_cubeamps(false),
+        Camera() : image_dir("/images"), base_name("image"), fits_naming("time"),
+                   dirmode(0), image_num(0), is_datacube(true), is_longerror(false), is_cubeamps(false),
                    _abortstate(false),
-                   autodir_state(true), abortstate(false), writekeys_when("before") {
+                   autodir_state(true), abortstate(false), writekeys_when("before"),
+                   power_status(0) {                        // 0 = Archon::POWER_STATUS_UNKNOWN
         }
 
 
@@ -75,7 +76,13 @@ namespace Camera {
         std::map<int, int> readout_time;
         //!< readout time in msec for given controller device number, read from .cfg file
 
-        std::string power_status;              //!< archon power status
+        int power_status;                            //!< current archon power status ID
+        std::map<int,std::string> power_status_map;  //!< archon power status maps ID to string
+
+        std::string power_status_name() {            //!< return the current power status by name
+          if (power_status_map.find(power_status)==power_status_map.end()) return "ERROR";
+          return power_status_map[power_status];
+        }
 
         void log_error(std::string function, std::string message);
 
@@ -382,6 +389,7 @@ namespace Camera {
     long        detector_pixels[2];      //!< number of physical pixels. element 0=cols (pixels), 1=rows (lines)
     long        section_size;            //!< pixels to write for this section (could be less than full sensor size)
     uint32_t    image_memory;            //!< bytes per image sensor
+    std::string default_observing_mode;  //!< default mode if set in config file
     std::string current_observing_mode;  //!< the current mode
     std::string readout_name;            //!< name of the readout source
     int         readout_type;            //!< type of the readout source is an enum
@@ -417,6 +425,7 @@ namespace Camera {
         : fits_compression_code(0),
           fits_compression_type("none"),
           naxes(2),
+          default_observing_mode("DEFAULT"),
 //        axes{1, 1, 1},                     // used by old fits.h system
 //        cubedepth(1),
 //        fitscubed(1),

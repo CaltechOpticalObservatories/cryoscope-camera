@@ -709,10 +709,11 @@ void doit(Network::TcpSocket sock) {
                 sock.Write(retstring);
                 sock.Write(" ");
             }
+        } else if (cmd == "isopen") {
+            retstring = server.archon.isconnected() ? "true" : "false";
+            ret = NO_ERROR;
         } else if (cmd == "isloaded") {
             retstring = server.firmwareloaded ? "true" : "false";
-            sock.Write(retstring);
-            sock.Write(" ");
             ret = NO_ERROR;
         } else if (cmd == "mode") {
             if (args.empty()) {
@@ -799,6 +800,12 @@ void doit(Network::TcpSocket sock) {
         else if ( cmd == CAMERAD_BIDIRECTION ) {
           ret = server.bidirection(args, retstring);
         }
+        else if ( cmd == CAMERAD_INITIALIZE ) {
+          ret = server.initialize(args, retstring);
+        }
+        else if ( cmd == CAMERAD_SHUTDOWN ) {
+          ret = server.shutdown(args, retstring);
+        }
 #endif
         else if (cmd == "expose") {
             ret = server.expose(args);
@@ -826,13 +833,11 @@ void doit(Network::TcpSocket sock) {
             ret = server.interface(retstring);
             sock.Write(retstring);
             sock.Write(" ");
-        } else if (cmd =="power") {
+        }
+        else if (cmd =="power") {
             ret = server.power( args, retstring );
-            if (!retstring.empty()) {
-                sock.Write(retstring);
-                sock.Write(" ");
-            }
-        } else if (cmd == "test") {
+        }
+        else if (cmd == "test") {
             ret = server.test(args, retstring);
             if (!retstring.empty()) {
                 sock.Write(retstring);

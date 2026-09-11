@@ -21,11 +21,6 @@ if( ${INTERFACE_TYPE} STREQUAL "Archon" )
         list(APPEND EMULATOR_SOURCE
                 "${EMULATOR_DIR}/emulator-archon.cpp"
                 )
-        add_library(emulatorInterface STATIC
-                ${EMULATOR_DIR}/emulator-archon.cpp
-                )
-        target_link_libraries(emulatorInterface common utilities)
-        target_include_directories(emulatorInterface PRIVATE ${CFITSIO_INCLUDE_DIRS})
 
 add_library(${EMULATOR_TARGET} ${EMULATOR_SOURCE})
 

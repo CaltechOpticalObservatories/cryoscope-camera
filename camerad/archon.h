@@ -16,6 +16,7 @@
 #include <variant>
 #include <memory>
 #include <functional>
+#include <mutex>
 
 #include "opencv2/opencv.hpp"
 #include "utilities.h"
@@ -86,6 +87,22 @@ namespace Archon {
     const int DEF_TRIGIN_READOUT_DISABLE = 0;
     const int DEF_SHUTENABLE_ENABLE = 1;
     const int DEF_SHUTENABLE_DISABLE = 0;
+
+    // Archon Power Status values
+    //
+    const int POWER_STATUS_ERROR        = -2;  // camerad internal value
+    const int POWER_STATUS_MISSING      = -1;  // the rest are Archon values
+    const int POWER_STATUS_UNKNOWN      =  0;
+    const int POWER_STATUS_NOCONFIG     =  1;
+    const int POWER_STATUS_OFF          =  2;
+    const int POWER_STATUS_INTERMEDIATE =  3;
+    const int POWER_STATUS_ON           =  4;
+    const int POWER_STATUS_STANDBY      =  5;
+
+    // Observing mode selected by the initialize command
+    //
+    const std::string INIT_MODE = "VIDEORXR";
+
 
     /***** Archon::PostProcess ***********************************************/
     template <typename T>
@@ -325,6 +342,8 @@ for (int i=0; i<5; i++) {
       private:
         unsigned long int start_timer, finish_timer; //!< Archon internal timer, start and end of exposure
         int n_hdrshift; //!< number of right-shift bits for Archon buffer in HDR mode
+        long power_on_sequence();
+        int get_power_status();
 
       public:
         Interface();
@@ -483,6 +502,9 @@ for (int i=0; i<5; i++) {
         std::mutex archon_mutex;
         //!< protects Archon from being accessed by multiple threads,
                                                     //!< use in conjunction with archon_busy flag
+        std::recursive_mutex sequence_mutex;
+        //!< serializes the multi-step power sequences (do_power, initialize,
+                                                    //!< shutdown) so that no command can land between their steps
         std::string longexposeparam; //!< param name to control longexposure in ACF (empty=not supported)
         std::string exposeparam; //!< param name to trigger exposure when set =1
 
@@ -564,6 +586,9 @@ for (int i=0; i<5; i++) {
 
         long power( std::string state_in, std::string &retstring );     /// wrapper for do_power
         long do_power( std::string state_in, std::string &retstring );  /// set/get Archon power state
+
+        long initialize( std::string args, std::string &retstring );    /// open, load, power on, set mode
+        long shutdown( std::string args, std::string &retstring );      /// power off, close
 
         long expose(std::string nseq_in);
 

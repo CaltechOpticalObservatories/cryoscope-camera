@@ -95,6 +95,17 @@ namespace Archon {
     this->frame.buftimestamp.resize( Archon::nbufs );
     this->frame.bufretimestamp.resize( Archon::nbufs );
     this->frame.buffetimestamp.resize( Archon::nbufs );
+
+    this->camera.power_status_map = { {POWER_STATUS_ERROR,        "ERROR"},
+                                      {POWER_STATUS_MISSING,      "MISSING"},
+                                      {POWER_STATUS_UNKNOWN,      "UNKNOWN"},
+                                      {POWER_STATUS_NOCONFIG,     "NOCONFIG"},
+                                      {POWER_STATUS_OFF,          "OFF"},
+                                      {POWER_STATUS_INTERMEDIATE, "INTERMEDIATE"},
+                                      {POWER_STATUS_ON,           "ON"},
+                                      {POWER_STATUS_STANDBY,      "STANDBY"}
+                                    };
+
   }
 
   // Archon::Interface deconstructor
@@ -350,12 +361,12 @@ namespace Archon {
     //
     std::string dontcare;
     message.str(""); message << "LINECOUNT " << rows;
-    error |= this->cds( message.str(), dontcare );
+    if ( error == NO_ERROR ) error = this->cds( message.str(), dontcare );
 
     // update parameters
     //
-    error |= this->set_parameter( "H2RG_rows", rows );
-    error |= this->set_parameter( "H2RG_rows_skip", skip );
+    if ( error == NO_ERROR ) error = this->set_parameter( "H2RG_rows", rows );
+    if ( error == NO_ERROR ) error = this->set_parameter( "H2RG_rows_skip", skip );
 
     // allocate archon_buf in blocks because the controller outputs data in units of blocks
     //
@@ -373,7 +384,7 @@ namespace Archon {
     retstring = message.str();
     logwrite( function, retstring );
 
-    return NO_ERROR;
+    return error;
   }
   /***** Archon::Interface::do_boi ********************************************/
 
@@ -383,7 +394,7 @@ namespace Archon {
    * @brief      set/get the power state
    * @param[in]  state_in    input string contains requested power state
    * @param[out] retstring   return string contains the current power state
-   * @return     ERROR or NO_ERROR
+   * @return     ERROR | NO_ERROR | HELP
    *
    */
   long Interface::do_power(std::string state_in, std::string &retstring) {
@@ -391,23 +402,44 @@ namespace Archon {
     std::stringstream message;
     long error = ERROR;
 
+    // Help
+    //
+    if ( state_in == "?" || state_in == "help" ) {
+      retstring=CAMERAD_POWER;
+      retstring.append( " [ on | off ]\n" );
+      retstring.append( "   Controls power to biases supplied by Archon controller.\n" );
+      retstring.append( "   When powering on, the detector is configured and made ready to expose,\n" );
+      retstring.append( "   which requires that the firmware has already been loaded.\n" );
+      retstring.append( "   No argument returns the current state.\n" );
+      return HELP;
+    }
+
     if ( !this->archon.isconnected() ) {                        // nothing to do if no connection open to controller
       this->camera.log_error( function, "connection not open to controller" );
       return( ERROR );
     }
 
+    // Hold the sequence lock so that setting the power and reading it back
+    // cannot be interleaved with another power sequence. Never wait on it --
+    // a blocked command occupies a server thread, which must not be starved
+    // from answering the watchdog's ping -- so return BUSY instead.
+    //
+    std::unique_lock<std::recursive_mutex> lock( this->sequence_mutex, std::try_to_lock );
+    if ( ! lock.owns_lock() ) {
+      this->camera.log_error( function, "another power sequence is in progress" );
+      return BUSY;
+    }
+
     // set the Archon power state as requested
     //
     if ( !state_in.empty() ) {                                  // received something
-      std::transform( state_in.begin(), state_in.end(), state_in.begin(), ::toupper );  // make uppercase
-      if ( state_in == "ON" ) {
-        error = this->archon_cmd( POWERON );                    // send POWERON command to Archon
-        if ( error == NO_ERROR ) std::this_thread::sleep_for( std::chrono::seconds(2) );         // wait 2s to ensure power is stable
+      if ( caseCompareString("ON", state_in) ) {
+        error = this->power_on_sequence();
       }
       else
-      if ( state_in == "OFF" ) {
+      if ( caseCompareString("OFF", state_in) ) {
         error = this->archon_cmd( POWEROFF );                   // send POWEROFF command to Archon
-        if ( error == NO_ERROR ) std::this_thread::sleep_for( std::chrono::milliseconds(200) );  // wait 200ms to ensure power is off
+        if (error==NO_ERROR) std::this_thread::sleep_for( std::chrono::milliseconds(200) );  // wait 200ms to ensure power is off
       }
       else {
         message.str(""); message << "unrecognized argument " << state_in << ": expected {on|off}";
@@ -421,64 +453,241 @@ namespace Archon {
       }
     }
 
-    // Read the Archon power state directly from Archon
-    //
-    std::string power;
-    error = get_status_key( "POWER", power );
+    this->get_power_status();                                   // read the state back from the Archon
 
-    if ( error != NO_ERROR ) return( ERROR );
-
-    int status=-1;
-
-    try { status = std::stoi( power ); }
-    catch (std::invalid_argument &) {
-      this->camera.log_error( function, "unable to convert power status message to integer" );
-      return(ERROR);
-    }
-    catch (std::out_of_range &) {
-      this->camera.log_error( function, "power status out of range" );
-      return(ERROR);
-    }
-
-    // set the power status (or not) depending on the value extracted from the STATUS message
-    //
-    switch( status ) {
-      case -1:                                                  // no POWER token found in status message
-        this->camera.log_error( function, "unable to find power in Archon status message" );
-        return( ERROR );
-      case  0:                                                  // usually an internal error
-        this->camera.power_status = "UNKNOWN";
-        break;
-      case  1:                                                  // no configuration applied
-        this->camera.power_status = "NOT_CONFIGURED";
-        break;
-      case  2:                                                  // power is off
-        this->camera.power_status = "OFF";
-        break;
-      case  3:                                                  // some modules powered, some not
-        this->camera.power_status = "INTERMEDIATE";
-        break;
-      case  4:                                                  // power is on
-        this->camera.power_status = "ON";
-        break;
-      case  5:                                                  // system is in standby
-        this->camera.power_status = "STANDBY";
-        break;
-      default:                                                  // should be impossible
-        message.str(""); message << "unknown power status: " << status;
-        this->camera.log_error( function, message.str() );
-        return( ERROR );
-    }
-
-    message.str(""); message << "POWER:" << this->camera.power_status;
-    this->camera.async.enqueue( message.str() );
-
-    retstring = this->camera.power_status;
+    retstring = this->camera.power_status_name();
 
     return(NO_ERROR);
   }
   /***** Archon::Interface::do_power ******************************************/
 
+
+  /***** Archon::Interface::power_on_sequence *********************************/
+  /**
+   * @brief      performs the power-on sequence, internal use only
+   * @details    turns on power, sets Start=1, hsetup
+   * @return     ERROR | NO_ERROR
+   *
+   */
+  long Interface::power_on_sequence() {
+    std::string function = "Archon::Interface::power_on_sequence";
+
+    // hsetup() below needs the firmware loaded, so check that here, before
+    // the Archon has been powered on and Start applied
+    //
+    if ( ! this->firmwareloaded ) {
+      this->camera.log_error( function, "firmware not loaded: load firmware before powering on" );
+      return ERROR;
+    }
+
+    long error = this->archon_cmd( POWERON );              // send POWERON command to Archon
+    if ( error != NO_ERROR ) return error;
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));  // ensure power is stable
+
+    error = this->set_parameter( "Start", 1);              // required for cryoscope acf
+    if ( error != NO_ERROR ) return error;
+
+    return this->hsetup();                                 // setup h2rg
+  }
+  /***** Archon::Interface::power_on_sequence *********************************/
+
+
+  /***** Archon::Interface::get_power_status **********************************/
+  /**
+   * @brief      returns the Archon power status
+   * @details    reads status directly from Archon
+   * @return     POWER_STATUS_* const
+   *
+   */
+  int Interface::get_power_status() {
+    std::string function = "Archon::Interface::get_power_status";
+
+    // Read the Archon power state directly from Archon
+    //
+    std::string power;
+    long error = get_status_key( "POWER", power );
+
+    try {
+      this->camera.power_status = (error==NO_ERROR ? std::stoi( power ) : POWER_STATUS_MISSING );
+    }
+    catch ( const std::exception &e ) {
+      this->camera.log_error( function, "reading power status message: "+std::string(e.what()) );
+      this->camera.power_status = POWER_STATUS_ERROR;
+    }
+
+    this->camera.async.enqueue( "POWER:"+this->camera.power_status_name() );
+
+    return this->camera.power_status;
+  }
+  /***** Archon::Interface::get_power_status **********************************/
+
+
+  /***** Archon::Interface::initialize ****************************************/
+  /**
+   * @brief      initialize the detector, ready to expose
+   * @details    performs open, load and power on, then selects the INIT_MODE mode
+   * @param[in]  args        input string, accepts no argument other than help
+   * @param[out] retstring   return string contains the selected mode
+   * @return     ERROR | NO_ERROR | HELP
+   *
+   */
+  long Interface::initialize(std::string args, std::string &retstring) {
+    std::string function = "Archon::Interface::initialize";
+    std::stringstream message;
+    std::string powerstate;
+
+    // Help
+    //
+    if ( args == "?" || args == "help" ) {
+      retstring=CAMERAD_INITIALIZE;
+      retstring.append( " [ ? ]\n" );
+      retstring.append( "   Initialize the detector, equivalent to open, load, power on and\n" );
+      retstring.append( "   selecting the " + INIT_MODE + " mode. Takes no argument.\n" );
+      return HELP;
+    }
+
+    if ( !args.empty() ) {
+      message.str(""); message << "ERROR invalid argument " << args << ": expected no argument";
+      logwrite( function, message.str() );
+      retstring="invalid_argument";
+      return ERROR;
+    }
+
+    // Hold the sequence lock for the duration, so that a concurrent power
+    // command cannot land between the steps below. Never wait on it --
+    // a blocked command occupies a server thread, which must not be starved
+    // from answering the watchdog's ping -- so return BUSY instead.
+    //
+    std::unique_lock<std::recursive_mutex> lock( this->sequence_mutex, std::try_to_lock );
+    if ( ! lock.owns_lock() ) {
+      this->camera.log_error( function, "another power sequence is in progress" );
+      return BUSY;
+    }
+
+    // open a connection to the controller
+    //
+    logwrite( function, "opening connection to controller" );
+    if ( this->connect_controller( "" ) != NO_ERROR ) {
+      this->camera.log_error( function, "opening connection to controller" );
+      return ERROR;
+    }
+
+    // load the default firmware, which also selects the DEFAULT mode
+    //
+    logwrite( function, "loading firmware" );
+    if ( this->load_firmware( std::string("") ) != NO_ERROR ) {
+      this->camera.log_error( function, "loading firmware" );
+      return ERROR;
+    }
+
+    // power on, which also sets Start=1 and performs the h2rg setup
+    //
+    logwrite( function, "powering on detector" );
+    if ( this->do_power( "on", powerstate ) != NO_ERROR ) {
+      this->camera.log_error( function, "powering on detector" );
+      return ERROR;
+    }
+
+    // select the observing mode
+    //
+    message.str(""); message << "selecting mode " << INIT_MODE;
+    logwrite( function, message.str() );
+    if ( this->set_camera_mode( INIT_MODE ) != NO_ERROR ) {
+      message.str(""); message << "selecting mode " << INIT_MODE;
+      this->camera.log_error( function, message.str() );
+      return ERROR;
+    }
+
+    // confirm the detector really is powered on before reporting success
+    //
+    if ( this->get_power_status() != POWER_STATUS_ON ) {
+      message.str(""); message << "detector power is " << this->camera.power_status_name()
+                               << " after initializing: expected ON";
+      this->camera.log_error( function, message.str() );
+      return ERROR;
+    }
+
+    retstring = this->camera_info.current_observing_mode;
+
+    message.str(""); message << "detector initialized: power " << powerstate << " mode " << retstring;
+    logwrite( function, message.str() );
+
+    return NO_ERROR;
+  }
+  /***** Archon::Interface::initialize ****************************************/
+
+
+  /***** Archon::Interface::shutdown ******************************************/
+  /**
+   * @brief      shut down the detector, powering off and closing the connection
+   * @details    performs power off, then close
+   * @param[in]  args        input string, accepts no argument other than help
+   * @param[out] retstring   return string contains the final power state
+   * @return     ERROR | NO_ERROR | HELP
+   *
+   */
+  long Interface::shutdown(std::string args, std::string &retstring) {
+    std::string function = "Archon::Interface::shutdown";
+    std::stringstream message;
+
+    // Help
+    //
+    if ( args == "?" || args == "help" ) {
+      retstring=CAMERAD_SHUTDOWN;
+      retstring.append( " [ ? ]\n" );
+      retstring.append( "   Shut down the detector, equivalent to power off followed by close.\n" );
+      retstring.append( "   Takes no argument.\n" );
+      return HELP;
+    }
+
+    if ( !args.empty() ) {
+      message.str(""); message << "ERROR invalid argument " << args << ": expected no argument";
+      logwrite( function, message.str() );
+      retstring="invalid_argument";
+      return ERROR;
+    }
+
+    // Hold the sequence lock for the duration, so that a concurrent power
+    // command cannot land between the steps below. Never wait on it --
+    // a blocked command occupies a server thread, which must not be starved
+    // from answering the watchdog's ping -- so return BUSY instead.
+    //
+    std::unique_lock<std::recursive_mutex> lock( this->sequence_mutex, std::try_to_lock );
+    if ( ! lock.owns_lock() ) {
+      this->camera.log_error( function, "another power sequence is in progress" );
+      return BUSY;
+    }
+
+    // nothing to shut down if no connection open to controller
+    //
+    if ( !this->archon.isconnected() ) {
+      logwrite( function, "connection already closed" );
+      return NO_ERROR;
+    }
+
+    // power off the detector
+    //
+    logwrite( function, "powering off detector" );
+    if ( this->do_power( "off", retstring ) != NO_ERROR ) {
+      this->camera.log_error( function, "powering off detector" );
+      return ERROR;                                             // leave the connection open, to allow a retry
+    }
+
+    // close the connection to the controller
+    //
+    logwrite( function, "closing connection to controller" );
+    if ( this->disconnect_controller() != NO_ERROR ) {
+      this->camera.log_error( function, "closing connection to controller" );
+      return ERROR;
+    }
+
+    message.str(""); message << "detector shut down: power " << retstring;
+    logwrite( function, message.str() );
+
+    return NO_ERROR;
+  }
+  /***** Archon::Interface::shutdown ******************************************/
 
 
   /***** Archon::Interface::configure_controller ******************************/
@@ -1204,6 +1413,7 @@ namespace Archon {
     } catch (...) {
       message.str(""); message << "converting Archon command: " << prefix << " to uppercase";
       this->camera.log_error( function, message.str() );
+      this->archon_busy = false;
       return ERROR;
     }
 
@@ -1440,9 +1650,9 @@ namespace Archon {
 
     if (error != NO_ERROR) {
       message << "ERROR: prepping parameter \"" << paramname << "=" << value;
+      logwrite( function, message.str() );
     }
 
-    logwrite( function, message.str() );
     return error;
   }
   /**************** Archon::Interface::prep_parameter *************************/
@@ -4041,7 +4251,7 @@ namespace Archon {
           try {
               if ( tokens.at(0) == key ) {                 // looking for the KEY
                   value = tokens.at(1);                      // found the KEY= status here
-                  break;                                     // done looking
+                  return( NO_ERROR );                        // done looking
               } else continue;
           }
           catch (std::out_of_range &) {                  // should be impossible
@@ -4050,7 +4260,10 @@ namespace Archon {
           }
       }
 
-      return( NO_ERROR );
+      message.str(""); message << "key " << key << " not found in Archon status message";
+      this->camera.log_error( function, message.str() );
+
+      return( ERROR );
   }
   /***** Archon::Interface::get_status_key ************************************/
 

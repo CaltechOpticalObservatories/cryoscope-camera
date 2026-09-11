@@ -29,12 +29,6 @@ namespace Archon {
       }
       /***** GenericImage::calc_rowtime ***************************************/
 
-      void set_config_parameter( const std::string &key, const std::string &val ) override {
-        ImageInfoBase::set_config_parameter( key, val ); // Call base class method for common parameters
-        if ( key == "READOUT_TIME" ) { this->readtime = std::stoi( val ); }
-        return;
-      }
-
       virtual int get_readouttime() override {
          return readouttime;
       }
