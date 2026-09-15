@@ -135,6 +135,39 @@ namespace Archon {
   /***** Interface::configure_controller **************************************/
 
 
+  /***** Interface::frame_source_select ***************************************/
+  /**
+   * @brief      choose the source of emulated pixel data
+   * @param[in]  spec  directory, file, or comma separated list of files
+   * @return     ERROR or NO_ERROR
+   *
+   * Takes effect on the next frame. An empty spec or "none" restores generated
+   * data.
+   *
+   */
+  long Interface::frame_source_select( const std::string &spec ) {
+    std::string function = " (Archon::Interface::frame_source_select) ";
+    std::stringstream message;
+
+    auto source = Emulator::make_frame_source_from_spec( spec, &this->active_mode );
+
+    if ( source == nullptr ) {
+      logwrite( function, "ERROR no usable frames in \"" + spec + "\"" );
+      return ERROR;
+    }
+
+    this->frame_source = std::move( source );
+
+    const size_t nframes = this->frame_source->available_frames();
+    message << "frame source: " << ( spec.empty() ? "synthetic" : spec ) << " (";
+    if ( nframes > 0 ) message << nframes << " frames)"; else message << "unlimited)";
+    logwrite( function, message.str() );
+
+    return NO_ERROR;
+  }
+  /***** Interface::frame_source_select ***************************************/
+
+
   /***** Interface::system_report *********************************************/
   /**
    * @brief      handles the incoming SYSTEM command
@@ -728,6 +761,21 @@ namespace Archon {
       // start an exposure thread.
       //
       if ( ( key == this->exposeparam ) && ( ival > 0 ) ) {
+        // A source serving a fixed set of frames cannot satisfy a request for
+        // more than it holds. Refuse now rather than run short partway through
+        // the sequence, where the client would wait on a frame that never
+        // arrives. A source reporting zero frames is unlimited.
+        //
+        size_t available = ( this->frame_source ? this->frame_source->available_frames() : 0 );
+        if ( available > 0 && available < static_cast<size_t>(ival) ) {
+          std::stringstream errmsg;
+          errmsg << "ERROR frame source holds " << available
+                 << " frame" << ( available == 1 ? "" : "s" )
+                 << " but " << ival << " requested";
+          logwrite( function, errmsg.str() );
+          return ERROR;
+        }
+
         // spawn a thread to mimic readout and create the data
         if ( !this->exposing.load() ) std::thread( dothread_expose, std::ref(*this), ival ).detach();
         else {
@@ -881,8 +929,11 @@ namespace Archon {
         size_t frame_bytes = static_cast<size_t>(width) * height * sizeof(uint16_t);
 
         iface.frame.bufdata.at(idx).resize(frame_bytes);
-        if (iface.frame_source) {
-          iface.frame_source->fill_frame(iface.frame.bufdata.at(idx).data(), width, height);
+        if ( iface.frame_source &&
+             !iface.frame_source->fill_frame(iface.frame.bufdata.at(idx).data(), width, height) ) {
+          std::cerr << get_timestamp() << function << "ERROR: could not fill frame buffer\n";
+          _exception.store(true);
+          break;
         }
 
         iface.frame.bufwidth.at(idx)  = width;

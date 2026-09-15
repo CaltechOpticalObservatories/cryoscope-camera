@@ -845,7 +845,13 @@ void doit(Network::TcpSocket sock) {
             }
         } else if (cmd == "native") {
             try {
-                std::transform(args.begin(), args.end(), args.begin(), ::toupper); // make uppercase
+                // Uppercase the command but not its arguments. Archon commands are
+                // uppercase but their arguments are not necessarily; the parameter
+                // name taken by LOADPARAM and FASTLOADPARAM is case-sensitive.
+                //
+                auto endofcmd = args.find( ' ' );
+                if ( endofcmd == std::string::npos ) endofcmd = args.length();
+                std::transform(args.begin(), args.begin()+endofcmd, args.begin(), ::toupper); // make uppercase
             } catch (...) {
                 logwrite(function, "error converting command to uppercase");
                 ret = ERROR;

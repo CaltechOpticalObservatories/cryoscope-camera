@@ -98,6 +98,7 @@ namespace Archon {
       // Functions
       //
       long configure_controller();           //!< get configuration parameters from .cfg file
+      long frame_source_select( const std::string &spec ); //!< choose the source of emulated pixel data
       long system_report(std::string buf, std::string &retstring);         
       long status_report(std::string &retstring);
       long timer_report(std::string &retstring);
