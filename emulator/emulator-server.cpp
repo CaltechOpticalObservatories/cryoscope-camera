@@ -295,6 +295,16 @@ void doit(Network::TcpSocket sock) {
                     retstream << "<" << ref;
                     }
     else
+    if (cmd.compare(0,8,"FRAMESRC")==0) {
+                    // Select the source of emulated pixel data. Argument is a
+                    // directory, a file, or a comma separated list of files.
+                    // ".raw" files are headerless frame buffers, ".fits" files
+                    // hold one frame each. Empty or "none" generates data.
+                    std::string spec = ( cmd.length() > 9 ? cmd.substr(9) : "" );
+                    ret = server->frame_source_select( spec );
+                    retstream << ( ret==ERROR ? "?" : "<" ) << ref;
+                    }
+    else
     if (cmd.compare("APPLYALL")==0) {
                     retstream << "<" << ref;
                     }
