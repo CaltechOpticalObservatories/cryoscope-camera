@@ -874,6 +874,13 @@ private:
       this->pFits->pHDU().addKey("ORIGNAME", filename, "Original file name");
       this->pFits->pHDU().addKey("FRAMENUM", camera_info.framenum,
                                  "Detector frame number");
+
+      // Only for files where reference subtraction is a meaningful distinction
+      //
+      if ( !camera_info.refsub_state.empty() ) {
+        this->pFits->pHDU().addKey("REFSUB", camera_info.refsub_state,
+                                   "was reference channel subtraction applied");
+      }
     }
     // Catch any errors from the FITS system and log them
     catch (CCfits::FitsError & err) {

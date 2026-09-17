@@ -44,6 +44,7 @@ namespace Archon {
     this->is_autofetch = false;
     this->is_unp = true;  // always write unp images for now but add control
     this->is_bidirectional = false; // overridden by BIDIRECTIONAL_READOUT in the config file
+    this->is_refsub = false;
     this->mode_actions["init_rxrvideo"]   = [this](const std::string &m){ return this->mode_init_rxrvideo(m);   };
     this->mode_actions["init_enhancedrx"] = [this](const std::string &m){ return this->mode_init_enhancedrx(m); };
     this->win_hstart = 0;
@@ -216,6 +217,51 @@ namespace Archon {
     return NO_ERROR;
   }
   /***** Archon::Interface::bidirection ***************************************/
+
+
+  /***** Archon::Interface::refsub ********************************************/
+  /**
+   * @brief      set/get whether the reference channel is subtracted
+   * @param[in]  args       input string contains requested state
+   * @param[out] retstring  return string contains the current state
+   * @return     ERROR | NO_ERROR | HELP
+   *
+   */
+  long Interface::refsub(std::string args, std::string &retstring) {
+    std::string function = "Archon::Interface::refsub";
+    std::stringstream message;
+
+    // Help
+    //
+    if ( args == "?" || args == "help" ) {
+      retstring = CAMERAD_REFSUB;
+      retstring.append( " [ yes | no ]\n" );
+      retstring.append( "   Set state of reference channel subtraction, where the reference\n" );
+      retstring.append( "   channel is subtracted from each of the image channels. If no\n" );
+      retstring.append( "   argument provided then the current state is returned.\n" );
+      return HELP;
+    }
+
+    if ( caseCompareString( args, "yes" ) || caseCompareString( args, "true" ) ) {
+      this->is_refsub = true;
+    }
+    else if ( caseCompareString( args, "no" ) || caseCompareString( args, "false" ) ) {
+      this->is_refsub = false;
+    }
+    else if ( !args.empty() ) {
+      logwrite( function, "ERROR invalid argument '" + args + "': expected { yes no }");
+      retstring = "invalid_argument";
+      return ERROR;
+    }
+
+    retstring = ( this->is_refsub ? "yes" : "no" );
+
+    message << "h2rg reference channel subtraction " << (this->is_refsub ? "enabled" : "disabled");
+    logwrite( function, message.str() );
+
+    return NO_ERROR;
+  }
+  /***** Archon::Interface::refsub ********************************************/
 
 
   /***** Archon::Interface::fits_compression **********************************/
@@ -4414,15 +4460,15 @@ namespace Archon {
     std::unique_ptr<PostProcess<uint16_t>> postproc_ushort;
 
     switch ( this->camera_info.bitpix ) {
-      case FLOAT_IMG:  postproc_float  = std::make_unique<PostProcess<float>>(frames, this->camera_info.naxes, this->is_bidirectional );
+      case FLOAT_IMG:  postproc_float  = std::make_unique<PostProcess<float>>(frames, this->camera_info.naxes, this->is_bidirectional, this->is_refsub );
                        break;
-      case LONG_IMG:   postproc_long   = std::make_unique<PostProcess<int32_t>>(frames, this->camera_info.naxes, this->is_bidirectional );
+      case LONG_IMG:   postproc_long   = std::make_unique<PostProcess<int32_t>>(frames, this->camera_info.naxes, this->is_bidirectional, this->is_refsub );
                        break;
-      case SHORT_IMG:  postproc_short  = std::make_unique<PostProcess<int16_t>>(frames, this->camera_info.naxes, this->is_bidirectional );
+      case SHORT_IMG:  postproc_short  = std::make_unique<PostProcess<int16_t>>(frames, this->camera_info.naxes, this->is_bidirectional, this->is_refsub );
                        break;
-      case ULONG_IMG:  postproc_ulong  = std::make_unique<PostProcess<uint32_t>>(frames, this->camera_info.naxes, this->is_bidirectional );
+      case ULONG_IMG:  postproc_ulong  = std::make_unique<PostProcess<uint32_t>>(frames, this->camera_info.naxes, this->is_bidirectional, this->is_refsub );
                        break;
-      case USHORT_IMG: postproc_ushort = std::make_unique<PostProcess<uint16_t>>(frames, this->camera_info.naxes, this->is_bidirectional );
+      case USHORT_IMG: postproc_ushort = std::make_unique<PostProcess<uint16_t>>(frames, this->camera_info.naxes, this->is_bidirectional, this->is_refsub );
                        break;
       default:         message.str(""); message << "unknown datatype " << this->camera_info.bitpix;
                        this->camera.log_error( function, message.str() );
@@ -4830,7 +4876,9 @@ simplify for cryoscope *****/
 
 if ( this->modemap[mode].subtract_reset ) {
   int32_t* cdsframe = postproc_ushort->get_cdsbuf();
-  this->typed_write_frame( cdsframe, *file_cds );
+  // Pass the state latched when PostProcess was built, so the keyword cannot
+  // disagree with the pixels.
+  this->typed_write_frame( cdsframe, *file_cds, postproc_ushort->isrefsub() );
 }
 
 /*****

@@ -392,6 +392,7 @@ namespace Camera {
     std::string default_observing_mode;  //!< default mode if set in config file
     std::string current_observing_mode;  //!< the current mode
     std::string readout_name;            //!< name of the readout source
+    std::string refsub_state;            //!< "yes" or "no" where reference subtraction applies, empty to omit the key
     int         readout_type;            //!< type of the readout source is an enum
     long        naxis;                   //!< number of axes in the image (3 for data cube)
     long        axes[3];                 //!< array of axis lengths where element 0=cols, 1=rows, 2=cubedepth <-- here for old fits.h
@@ -491,6 +492,7 @@ namespace Camera {
           image_memory(other.image_memory),
           current_observing_mode(other.current_observing_mode),
           readout_name(other.readout_name),
+          refsub_state(other.refsub_state),
           readout_type(other.readout_type),
           naxis(other.naxis),
           axes{other.axes[0], other.axes[1], other.axes[2]},
@@ -564,6 +566,7 @@ namespace Camera {
           image_memory = other.image_memory;
           current_observing_mode = other.current_observing_mode;
           readout_name = other.readout_name;
+          refsub_state = other.refsub_state;
           readout_type = other.readout_type;
           naxis = other.naxis;
           axes[0] = other.axes[0];
