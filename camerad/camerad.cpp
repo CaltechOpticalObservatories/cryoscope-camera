@@ -797,8 +797,16 @@ void doit(Network::TcpSocket sock) {
         else if ( cmd == CAMERAD_SAVEUNP ) {
           ret = server.save_unp(args, retstring);
         }
-        else if ( cmd == CAMERAD_BIDIRECTION ) {
-          ret = server.bidirection(args, retstring);
+        // Bidirectional de-interlacing control is not implemented correctly.
+        // Taplines return every channel in detector-column order, so the
+        // coherent readout of a bidirectionally scanned detector is the one
+        // with bidirection off. See Archon::PostProcess::deinterlace.
+        //
+//      else if ( cmd == CAMERAD_BIDIRECTION ) {
+//        ret = server.bidirection(args, retstring);
+//      }
+        else if ( cmd == CAMERAD_REFSUB ) {
+          ret = server.refsub(args, retstring);
         }
         else if ( cmd == CAMERAD_INITIALIZE ) {
           ret = server.initialize(args, retstring);

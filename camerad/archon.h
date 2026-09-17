@@ -110,6 +110,7 @@ namespace Archon {
       protected:
         int _frames;   //!< frames per buffer (1 = signal only; 2 = signal+reset)
         bool _bidirectional; //!< true if alternating channels read out in alternating directions
+        bool _refsub;        //!< true if the reference channel is subtracted from the science channels
         std::vector<std::vector<T>> _sigbuf;
         std::vector<std::vector<T>> _resbuf;
         std::vector<int32_t> _cdsbuf;
@@ -125,8 +126,8 @@ namespace Archon {
 
       public:
 
-        PostProcess( int frames, std::vector<long> naxes, bool bidirectional )
-          : _frames(frames), _bidirectional(bidirectional), _naxes(naxes) {
+        PostProcess( int frames, std::vector<long> naxes, bool bidirectional, bool refsub )
+          : _frames(frames), _bidirectional(bidirectional), _refsub(refsub), _naxes(naxes) {
           const std::string function="Archon::PostProcess::PostProcess";
           std::stringstream message;
 
@@ -146,9 +147,10 @@ namespace Archon {
         }
 
         void deinterlace(const T* typed_image, size_t idx) {
-          std::stringstream message;
-          message << "[DEBUG] datatype=" << demangle(typeid(T).name()) << " storing pair for idx=" << idx;
-          logwrite( "PostProcess::deinterlace", message.str() );
+          #ifdef LOGLEVEL_DEBUG
+          logwrite( "PostProcess::deinterlace", "[DEBUG] datatype=" + demangle(typeid(T).name()) +
+                    " storing pair for idx=" + std::to_string(idx) );
+          #endif
 
           // Single-frame buffer (no reset).
           // Buffer row stride is _cols. When the readout is bidirectional,
@@ -238,8 +240,12 @@ namespace Archon {
         void cds_subtract(int sigidx, int residx) {
           std::string function="PostProcess::cds_subtract";
           std::stringstream message;
+          #ifdef LOGLEVEL_DEBUG
           message << "[DEBUG] subtracting signal[" << sigidx << "] - reset[" << residx << "]";
           logwrite( "PostProcess::cds_subtract", message.str() );
+          #endif
+
+          if ( _refsub ) { reference_subtract(sigidx, residx); return; }
 
 // force some pixels for testing
 //_sigbuf[sigidx][0]=0;    _sigbuf[sigidx][1]=8675; _sigbuf[sigidx][2]=8675; _sigbuf[sigidx][3]=999; _sigbuf[sigidx][4]=666;
@@ -248,8 +254,8 @@ namespace Archon {
           T* psignal = _sigbuf[sigidx].data();
           T* preset  = _resbuf[residx].data();
 
-          if (psignal==nullptr) { logwrite(function, "[DEBUG] ERROR psignal is null" ); return; }
-          if (preset==nullptr)  { logwrite(function, "[DEBUG] ERROR preset is null" );  return; }
+          if (psignal==nullptr) { logwrite(function, "ERROR psignal is null" ); return; }
+          if (preset==nullptr)  { logwrite(function, "ERROR preset is null" );  return; }
 
           // this will hold the subtracted frame
           //
@@ -269,11 +275,13 @@ namespace Archon {
             //
             cv::subtract(*sigframe, *resframe, *cdsframe, cv::noArray(), CV_32S);
 
-logwrite(function,"[DEBUG] cv::subtract(*sigframe, *resframe, *cdswork, cv::noArray(), CV_16S)");
-for (int i=0; i<5; i++) {
-  message.str(""); message << "[DEBUG] pix " << cdsframe->at<int32_t>(i);
-  logwrite(function, message.str());
-}
+            #ifdef LOGLEVEL_DEBUG
+            logwrite(function,"[DEBUG] cv::subtract(*sigframe, *resframe, *cdswork, cv::noArray(), CV_16S)");
+            for (int i=0; i<5; i++) {
+              message.str(""); message << "[DEBUG] pix " << cdsframe->at<int32_t>(i);
+              logwrite(function, message.str());
+            }
+            #endif
 /*
             cv::subtract(*sigframe, *resframe, *cdswork);
 logwrite(function,"[DEBUG] cv::subtract(*sigframe, *resframe, *cdswork)");
@@ -298,7 +306,66 @@ for (int i=0; i<5; i++) {
         /***** Archon::PostProcess::cds_subtract ******************************/
 
 
+        /***** Archon::PostProcess::reference_subtract ************************/
+        /**
+         * @brief      CDS subtract, then subtract the reference channel
+         * @param[in]  sigidx  index into the signal buffer
+         * @param[in]  residx  index into the reset buffer
+         *
+         * The last channel in the buffer is the reference channel. This subtracts
+         * the reference channel from each image channel's CDS pair.
+         *
+         * The detector is scanned bidirectionally but the reference channel is
+         * not, so the odd-number channels hold pixels which are reversed with
+         * respect to the time at which they were sampled. The reference is
+         * therefore indexed backwards for those channels, which keeps the
+         * correction aligned in time.
+         *
+         * This will need to be changed if bidirection control is implemented
+         * correctly.
+         *
+         */
+        void reference_subtract(int sigidx, int residx) {
+          std::string function="PostProcess::reference_subtract";
+          #ifdef LOGLEVEL_DEBUG
+          std::stringstream message;
+          message << "[DEBUG] subtracting reference channel from signal[" << sigidx << "] - reset[" << residx << "]";
+          logwrite( function, message.str() );
+          #endif
+
+          const T* psignal = _sigbuf[sigidx].data();
+          const T* preset  = _resbuf[residx].data();
+
+          if (psignal==nullptr) { logwrite(function, "ERROR psignal is null" ); return; }
+          if (preset==nullptr)  { logwrite(function, "ERROR preset is null" );  return; }
+
+          // The buffer holds nchan channels of 64 columns and the last of them
+          // is the reference channel. The output keeps the other nchan-1, so
+          // its row stride is 64 columns shorter than the buffer's.
+          //
+          const long nchan   = _cols / 64;
+          const long refcol  = ( nchan - 1 ) * 64;
+          const long outcols = refcol;
+
+          for ( long row=0; row < _rows; ++row ) {
+            const T* sigrow = &psignal[row*_cols];
+            const T* resrow = &preset[row*_cols];
+            int32_t* outrow = &_cdsbuf[row*outcols];
+            for ( long chan=0; chan < nchan-1; ++chan ) {
+              for ( long i=0; i<64; ++i ) {
+                long refi = refcol + ( chan % 2 == 0 ? i : 63-i );
+                outrow[chan*64 + i] = ( static_cast<int32_t>(sigrow[chan*64 + i]) - static_cast<int32_t>(resrow[chan*64 + i]) )
+                                    - ( static_cast<int32_t>(sigrow[refi])        - static_cast<int32_t>(resrow[refi]) );
+              }
+            }
+          }
+        }
+        /***** Archon::PostProcess::reference_subtract ************************/
+
+
         int32_t* get_cdsbuf() { return _cdsbuf.data(); }
+
+        bool isrefsub() const { return _refsub; }
 
         /***** Archon::PostProcess::write_unp *********************************/
         /**
@@ -309,11 +376,13 @@ for (int i=0; i<5; i++) {
          */
         void write_unp( Camera::Information &camera_info, FITS_file<T> &fits_file, int idx ) {
 
+          #ifdef LOGLEVEL_DEBUG
           std::stringstream message;
           message << "[DEBUG] file=" << camera_info.fits_name
                   << " extension=" << camera_info.extension
                   << " datatype=" << demangle(typeid(T).name());
           logwrite( "PostProcess::write_unp", message.str() );
+          #endif
 
 
           camera_info.region_of_interest[0]=1;
@@ -399,9 +468,14 @@ for (int i=0; i<5; i++) {
         // write the image data based on the type T
         //
         template<typename T>
-        void typed_write_frame( T* buffer, FITS_file<T> &fits_file ) {
+        void typed_write_frame( T* buffer, FITS_file<T> &fits_file, bool refsub ) {
           ++this->camera_info.extension;
           Camera::Information fits_info( this->camera_info );
+
+          // Set on this copy only. The unprocessed file is written from its own
+          // Camera::Information, so it never carries the keyword.
+          //
+          fits_info.refsub_state = ( refsub ? "yes" : "no" );
 
           #ifdef LOGLEVEL_DEBUG
           std::stringstream message;
@@ -461,6 +535,7 @@ for (int i=0; i<5; i++) {
         bool is_autofetch;
         bool is_unp;               //!< should I write unp images?
         bool is_bidirectional;     //!< do alternating channels read out in alternating directions?
+        bool is_refsub;            //!< should I subtract the reference channel?
         int win_hstart;
         int win_hstop;
         int win_vstart;
@@ -518,6 +593,7 @@ for (int i=0; i<5; i++) {
         int  prev_ring_index() { int i=this->ring_index-1; return( i<0 ? 1 : i ); }
         long save_unp(std::string args, std::string &retstring);
         long bidirection( std::string args, std::string &retstring );
+        long refsub(std::string args, std::string &retstring);
         long fits_compression(std::string args, std::string &retstring);
         static long interface(std::string &iface); //!< get interface type
         long configure_controller(); //!< get configuration parameters
